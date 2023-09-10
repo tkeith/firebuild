@@ -2,6 +2,7 @@ import { z } from "zod";
 import asyncSleep from "./asyncSleep";
 import { JsonSchema7Type } from "zod-to-json-schema/src/parseDef";
 import "dotenv/config";
+import { parsedJsonSchema } from "./util";
 
 /*
 The goal of this file is to handle calls to the GPT API with basic data validation (up to and including parsing the JSON response from GPT).
@@ -64,6 +65,12 @@ export const messageSchema = z.union([
 
 export type Message = z.infer<typeof messageSchema>;
 
+export const functionDefinitionSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  parameters: parsedJsonSchema, // TODO: this is not as restrictive as `FunctionDefinition`
+});
+
 export type FunctionDefinition = {
   name: string;
   description: string;
@@ -105,38 +112,34 @@ export async function callGptApi(
   while (true) {
     let doNotRetry = false;
     try {
-      console.log("calling gpt...");
+      console.log("Asking GPT...");
 
       doNotRetry = false;
+
+      const requestBody = JSON.stringify({
+        // messages: [
+        //   { role: "system", content: "you are a poem writer" },
+        //   { role: "user", content: "write me a poem about bitcoin" },
+        // ],
+        messages: messages.map((message) => messageSchema.parse(message)),
+        temperature: 0,
+        top_p: 1,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        model: model,
+        functions: undefinedIfZeroLength(
+          functions.map((functionDefinition) =>
+            functionDefinitionSchema.parse(functionDefinition)
+          )
+        ),
+      });
 
       response = await fetch("https://api.openai.com/v1/chat/completions", {
         headers: {
           Authorization: "Bearer " + OPENAI_KEY,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          // messages: [
-          //   { role: "system", content: "you are a poem writer" },
-          //   { role: "user", content: "write me a poem about bitcoin" },
-          // ],
-          messages: messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-            function_call: "function_call" in m ? m.function_call : undefined,
-          })),
-          temperature: 0,
-          top_p: 1,
-          frequency_penalty: 0,
-          presence_penalty: 0,
-          model: model,
-          functions: undefinedIfZeroLength(
-            functions.map((fn) => ({
-              name: fn.name,
-              description: fn.description,
-              parameters: fn.parameters,
-            }))
-          ),
-        }),
+        body: requestBody,
         method: "POST",
       });
 

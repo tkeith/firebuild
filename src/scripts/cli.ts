@@ -40,6 +40,9 @@ const GPT_FUNCTIONS = [
       const result = (
         await execPromise(`cd ${context.codePath} && tree --gitignore .`)
       ).stdout.trim();
+      console.log(
+        `Returning file listing of ${result.split("\n").length} lines.`
+      );
       return result;
     },
   },
@@ -195,6 +198,7 @@ async function handleUserRequest(context: Context, request: string) {
 
   while (true) {
     const lastMessage = messages[messages.length - 1]!;
+
     if (lastMessage.role === "assistant" && lastMessage.function_call) {
       const functionRes: string = await handleFunctionCall(
         context,
@@ -210,11 +214,15 @@ async function handleUserRequest(context: Context, request: string) {
       });
       continue;
     }
-    if (
-      lastMessage.role === "user" ||
-      lastMessage.role === "function" ||
-      lastMessage.role === "assistant"
-    ) {
+    if (lastMessage.role === "assistant") {
+      const userInput = await askUserMultiLine("Respond to GPT");
+      messages.push({
+        role: "user",
+        content: userInput,
+      });
+      continue;
+    }
+    if (lastMessage.role === "user" || lastMessage.role === "function") {
       const gptRes = await callGptApi(
         messages,
         FUNCTION_DEFINITIONS_FOR_GPT,
@@ -236,12 +244,15 @@ async function handleUserRequest(context: Context, request: string) {
 }
 
 async function main() {
+  console.log(
+    "===================================================================\nFirebuild -- let AI do the work for you integrating with Fireblocks\n===================================================================\n"
+  );
+
   const codePath = await askUserSingleLine(
     "What is the path to your code directory?"
   );
 
   while (true) {
-    console.log("\n");
     const request = await askUserMultiLine("What do you want to do?");
     await handleUserRequest({ codePath }, request);
   }
