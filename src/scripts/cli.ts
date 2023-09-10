@@ -14,6 +14,8 @@ import { z } from "zod";
 import * as fsPromises from "fs/promises";
 import path from "path";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import { createHash } from "crypto";
+import jwt from "jsonwebtoken";
 
 // read system prompt from `../system_prompt.md` relative to this file
 const SYSTEM_PROMPT_PROMISE = fsPromises
@@ -158,11 +160,49 @@ const GPT_FUNCTIONS = [
       }
     ) => {
       console.log(`Making request to ${args.url}...`);
-      const fetchResult = await fetch(args.url, {
+
+      // The payload field should contain the following fields:
+      // uri - The URI part of the request (e.g., /v1/transactions).
+      // nonce - Unique number or string. Each API request needs to have a different nonce.
+      // iat - The time at which the JWT was issued, in seconds since Epoch.
+      // exp - The expiration time on and after which the JWT must not be accepted for processing, in seconds since Epoch. (Must be less than iat+30sec.)
+      // sub - The API Key.
+      // bodyHash - Hex-encoded SHA-256 hash of the raw HTTP request body.
+
+      const body = args.body ? JSON.stringify(args.body) : undefined;
+
+      const hash = createHash("sha256");
+      hash.update(body || "");
+      const bodyHash = hash.digest("hex");
+
+      const payload = {
+        uri: args.url.replace("https://api.fireblocks.io", ""),
+        nonce: Date.now(),
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 30,
+        sub: context.fireblocksApiKey,
+        bodyHash: bodyHash,
+      };
+
+      const secretKey = await fsPromises.readFile(
+        safePathJoin(context.codePath, "fireblocks_secret.key")
+      );
+
+      const token = jwt.sign(payload, secretKey, { algorithm: "RS256" });
+
+      const options = {
         method: args.method,
-        headers: args.headers,
-        body: args.body ? JSON.stringify(args.body) : undefined,
-      });
+        headers: {
+          ...args.headers,
+          Authorization: `Bearer ${token}`,
+          "X-API-Key": context.fireblocksApiKey,
+        },
+        body: body,
+      };
+
+      console.log("tk: options", options);
+
+      const fetchResult = await fetch(args.url, options);
       const result = await fetchResult.text();
       const statusCode = fetchResult.status;
       console.log(`Got response with status code ${statusCode}.`);
