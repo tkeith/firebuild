@@ -1,10 +1,12 @@
 import { Message, callGptApi } from "@/lib/gptApi";
 import {
+  ParsedJson,
   askUserMultiLine,
   askUserSingleLine,
   execPromise,
   mkdirP,
   parseGptJson,
+  parsedJsonSchema,
   pathIsFile,
   safePathJoin,
 } from "@/lib/util";
@@ -12,10 +14,15 @@ import { z } from "zod";
 import * as fsPromises from "fs/promises";
 import path from "path";
 import { zodToJsonSchema } from "zod-to-json-schema";
-import { SYSTEM_PROMPT } from "@/lib/SYSTEM_PROMPT";
+
+// read system prompt from `../system_prompt.md` relative to this file
+const SYSTEM_PROMPT_PROMISE = fsPromises
+  .readFile(path.join(__dirname, "../system_prompt.md"), "utf-8")
+  .then((s) => s.trim());
 
 type Context = {
   codePath: string;
+  fireblocksApiKey: string;
 };
 
 const GPT_FUNCTIONS = [
@@ -89,14 +96,17 @@ const GPT_FUNCTIONS = [
       command: z.string().describe(`Bash command to run.`),
     }),
     execute: async (context: Context, args: { command: string }) => {
-      console.log(`GPT wants to run command:\n  ${args.command}`);
+      console.log(`GPT wants to run command:\n\n  ${args.command}\n`);
       const userResponse = await askUserSingleLine(
-        "Do you want to run this command? (y/n)"
+        "Do you want to run this command?"
       );
 
-      if (userResponse.toLowerCase() !== "y") {
+      if (!userResponse.toLowerCase().startsWith("y")) {
+        console.log("Canceled.");
         return "<user canceled request>";
       }
+
+      console.log("\nRunning command...\n");
 
       let execRes;
       let resPrefix = "";
@@ -128,6 +138,37 @@ const GPT_FUNCTIONS = [
   },
 
   {
+    name: "make_http_request",
+    description: "Make an HTTP request.",
+    parametersSchema: z.object({
+      method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+      url: z.string().describe("URL to query."),
+      headers: z.record(z.string()).describe("Headers to send.").optional(),
+      body: z.any().describe("Body to send.").optional(),
+    }),
+    execute: async (
+      context: Context,
+      args: {
+        method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+        url: string;
+        headers: Record<string, string>;
+        body?: ParsedJson;
+      }
+    ) => {
+      console.log(`Making request to ${args.url}...`);
+      const fetchResult = await fetch(args.url, {
+        method: args.method,
+        headers: args.headers,
+        body: args.body ? JSON.stringify(args.body) : undefined,
+      });
+      const result = await fetchResult.text();
+      const statusCode = fetchResult.status;
+      console.log(`Got response with status code ${statusCode}.`);
+      return `Status code: ${statusCode}\n\nResponse:\n\n${result}`;
+    },
+  },
+
+  {
     name: "complete_request",
     description: "Complete the request.",
     parametersSchema: z.object({
@@ -147,6 +188,15 @@ const FUNCTION_DEFINITIONS_FOR_GPT = GPT_FUNCTIONS.map((fn) => ({
   parameters: zodToJsonSchema(fn.parametersSchema),
 }));
 
+async function getSystemPrompt(context: Context) {
+  const result = (await SYSTEM_PROMPT_PROMISE).replace(
+    "{{fireblocksApiKey}}",
+    context.fireblocksApiKey
+  );
+
+  return result;
+}
+
 async function handleFunctionCall(
   context: Context,
   functionCall: {
@@ -154,6 +204,8 @@ async function handleFunctionCall(
     arguments: string;
   }
 ): Promise<string> {
+  // console.log("tk: functionCall raw: ", JSON.stringify(functionCall, null, 2));
+
   const fn = GPT_FUNCTIONS.find((fn) => fn.name === functionCall.name);
   if (!fn) {
     throw new Error(`Function ${functionCall.name} not found.`);
@@ -165,6 +217,7 @@ async function handleFunctionCall(
     const rawParsedJson = parseGptJson(functionCall.arguments);
     args = fn.parametersSchema.parse(rawParsedJson);
   } catch (e) {
+    // console.log("tk: bad args", e);
     return `<error parsing arguments>`;
   }
 
@@ -175,7 +228,7 @@ async function handleFunctionCall(
 
 async function handleUserRequest(context: Context, request: string) {
   let messages: Message[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: await getSystemPrompt(context) },
     { role: "user", content: request },
     {
       role: "assistant",
@@ -188,6 +241,9 @@ async function handleUserRequest(context: Context, request: string) {
     const lastMessage = messages[messages.length - 1]!;
 
     if (lastMessage.role === "assistant" && lastMessage.function_call) {
+      console.log(
+        `GPT wants to call a function: ${lastMessage.function_call.name}`
+      );
       const functionRes: string = await handleFunctionCall(
         context,
         lastMessage.function_call
@@ -203,7 +259,7 @@ async function handleUserRequest(context: Context, request: string) {
       continue;
     }
     if (lastMessage.role === "assistant") {
-      const userInput = await askUserMultiLine("Respond to GPT");
+      const userInput = await askUserSingleLine("Respond to GPT");
       messages.push({
         role: "user",
         content: userInput,
@@ -223,7 +279,7 @@ async function handleUserRequest(context: Context, request: string) {
       const newMessage = gptRes.newMessage;
       messages.push(newMessage);
       if (newMessage.content) {
-        console.log("\nGPT:");
+        console.log("GPT:");
         console.log(newMessage.content);
         console.log();
       }
@@ -242,10 +298,17 @@ async function main() {
     "What is the path to your code directory?"
   );
 
+  console.log();
+
+  const fireblocksApiKey = await askUserSingleLine(
+    "What is your Fireblocks API key?"
+  );
+
   while (true) {
     console.log();
-    const request = await askUserMultiLine("What do you want to do?");
-    await handleUserRequest({ codePath }, request);
+    const request = await askUserSingleLine("What do you want to do?");
+    console.log();
+    await handleUserRequest({ codePath, fireblocksApiKey }, request);
   }
 }
 

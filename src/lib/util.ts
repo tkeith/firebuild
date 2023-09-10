@@ -142,22 +142,35 @@ export async function askUserMultiLine(question: string): Promise<string> {
   });
 }
 
-export async function askUserSingleLine(question: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve, reject) => {
-    rl.on("line", (input: string) => {
-      rl.close();
-      resolve(input);
+export async function askUserSingleLine(
+  question: string,
+  allowEmpty: boolean = false,
+  trim: boolean = true
+): Promise<string> {
+  while (true) {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
     });
+    let result = await new Promise<string>((resolve, reject) => {
+      rl.on("line", (input: string) => {
+        rl.close();
+        resolve(input);
+      });
 
-    rl.on("error", (err: Error) => {
-      reject(err);
+      rl.on("error", (err: Error) => {
+        reject(err);
+      });
+
+      console.log(`${question} (respond and hit enter):`);
     });
-
-    console.log(`${question} (respond and hit enter):`);
-  });
+    if (trim) {
+      result = result.trim();
+    }
+    if (result === "" && !allowEmpty) {
+      console.log("<empty response not allowed>\n");
+      continue;
+    }
+    return result;
+  }
 }

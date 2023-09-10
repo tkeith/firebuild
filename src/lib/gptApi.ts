@@ -112,27 +112,33 @@ export async function callGptApi(
   while (true) {
     let doNotRetry = false;
     try {
-      console.log("\nAsking GPT...");
+      console.log("\nAsking GPT...\n");
 
       doNotRetry = false;
 
-      const requestBody = JSON.stringify({
-        // messages: [
-        //   { role: "system", content: "you are a poem writer" },
-        //   { role: "user", content: "write me a poem about bitcoin" },
-        // ],
-        messages: messages.map((message) => messageSchema.parse(message)),
-        temperature: 0,
-        top_p: 1,
-        frequency_penalty: 0,
-        presence_penalty: 0,
-        model: model,
-        functions: undefinedIfZeroLength(
-          functions.map((functionDefinition) =>
-            functionDefinitionSchema.parse(functionDefinition)
-          )
-        ),
-      });
+      const requestBody = JSON.stringify(
+        {
+          // messages: [
+          //   { role: "system", content: "you are a poem writer" },
+          //   { role: "user", content: "write me a poem about bitcoin" },
+          // ],
+          messages: messages.map((message) => messageSchema.parse(message)),
+          temperature: 0,
+          top_p: 1,
+          frequency_penalty: 0,
+          presence_penalty: 0,
+          model: model,
+          functions: undefinedIfZeroLength(
+            functions.map((functionDefinition) =>
+              functionDefinitionSchema.parse(functionDefinition)
+            )
+          ),
+        },
+        null,
+        2
+      );
+
+      // console.log("tk: ", requestBody);
 
       response = await fetch("https://api.openai.com/v1/chat/completions", {
         headers: {
@@ -162,7 +168,7 @@ export async function callGptApi(
       }
 
       if (triesLeft > 0) {
-        console.log("retrying...");
+        console.log("Retrying...");
         triesLeft -= 1;
         await asyncSleep(1000 * (totalTries - triesLeft));
         continue;
