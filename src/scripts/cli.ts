@@ -101,12 +101,14 @@ const GPT_FUNCTIONS = [
         "Do you want to run this command?"
       );
 
+      console.log();
+
       if (!userResponse.toLowerCase().startsWith("y")) {
         console.log("Canceled.");
         return "<user canceled request>";
       }
 
-      console.log("\nRunning command...\n");
+      console.log("Running command...\n");
 
       let execRes;
       let resPrefix = "";

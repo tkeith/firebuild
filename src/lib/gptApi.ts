@@ -2,7 +2,7 @@ import { z } from "zod";
 import asyncSleep from "./asyncSleep";
 import { JsonSchema7Type } from "zod-to-json-schema/src/parseDef";
 import "dotenv/config";
-import { parsedJsonSchema } from "./util";
+import { parsedJsonSchema, spinner } from "./util";
 
 /*
 The goal of this file is to handle calls to the GPT API with basic data validation (up to and including parsing the JSON response from GPT).
@@ -140,14 +140,16 @@ export async function callGptApi(
 
       // console.log("tk: ", requestBody);
 
-      response = await fetch("https://api.openai.com/v1/chat/completions", {
-        headers: {
-          Authorization: "Bearer " + OPENAI_KEY,
-          "Content-Type": "application/json",
-        },
-        body: requestBody,
-        method: "POST",
-      });
+      response = await spinner(
+        fetch("https://api.openai.com/v1/chat/completions", {
+          headers: {
+            Authorization: "Bearer " + OPENAI_KEY,
+            "Content-Type": "application/json",
+          },
+          body: requestBody,
+          method: "POST",
+        })
+      );
 
       if (!response.ok) {
         console.log(response.status);

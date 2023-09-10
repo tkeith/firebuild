@@ -174,3 +174,28 @@ export async function askUserSingleLine(
     return result;
   }
 }
+
+export async function spinner<T>(promise: Promise<T>): Promise<T> {
+  const spinnerChars = ["|", "/", "-", "\\"];
+  let i = 0;
+
+  const interval = setInterval(() => {
+    process.stdout.clearLine(0);
+    process.stdout.cursorTo(0);
+    process.stdout.write(spinnerChars[i]!);
+    i = (i + 1) % spinnerChars.length;
+  }, 100);
+
+  try {
+    const result = await promise;
+    clearInterval(interval);
+    process.stdout.clearLine(0);
+    process.stdout.cursorTo(0);
+    return result;
+  } catch (error) {
+    clearInterval(interval);
+    process.stdout.clearLine(0);
+    process.stdout.cursorTo(0);
+    throw error;
+  }
+}
