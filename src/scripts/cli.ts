@@ -16,6 +16,7 @@ import path from "path";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { createHash } from "crypto";
 import jwt from "jsonwebtoken";
+import { v4 } from "uuid";
 
 // read system prompt from `../system_prompt.md` relative to this file
 const SYSTEM_PROMPT_PROMISE = fsPromises
@@ -143,7 +144,8 @@ const GPT_FUNCTIONS = [
 
   {
     name: "make_http_request",
-    description: "Make an HTTP request.",
+    description:
+      "Make an HTTP request. This will automatically add the Fireblocks authentication headers.",
     parametersSchema: z.object({
       method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
       url: z.string().describe("URL to query."),
@@ -171,24 +173,40 @@ const GPT_FUNCTIONS = [
 
       const body = args.body ? JSON.stringify(args.body) : undefined;
 
-      const hash = createHash("sha256");
-      hash.update(body || "");
-      const bodyHash = hash.digest("hex");
-
-      const payload = {
-        uri: args.url.replace("https://api.fireblocks.io", ""),
-        nonce: Date.now(),
-        iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + 30,
-        sub: context.fireblocksApiKey,
-        bodyHash: bodyHash,
-      };
-
       const secretKey = await fsPromises.readFile(
         safePathJoin(context.codePath, "fireblocks_secret.key")
       );
 
-      const token = jwt.sign(payload, secretKey, { algorithm: "RS256" });
+      // const hash = createHash("sha256");
+      // hash.update(body || "");
+      // const bodyHash = hash.digest("hex");
+
+      // const payload = {
+      //   uri: args.url.replace("https://api.fireblocks.io", ""),
+      //   nonce: Date.now(),
+      //   iat: Math.floor(Date.now() / 1000),
+      //   exp: Math.floor(Date.now() / 1000) + 30,
+      //   sub: context.fireblocksApiKey,
+      //   bodyHash: bodyHash,
+      // };
+
+      // const token = jwt.sign(payload, secretKey, { algorithm: "RS256" });
+
+      const token = jwt.sign(
+        {
+          uri: args.url.replace("https://api.fireblocks.io", ""),
+          nonce: v4(),
+          iat: Math.floor(Date.now() / 1000),
+          exp: Math.floor(Date.now() / 1000) + 55,
+          sub: context.fireblocksApiKey,
+          bodyHash: createHash("sha256")
+            .update(JSON.stringify(body || ""))
+            .digest()
+            .toString("hex"),
+        } as any,
+        secretKey.toString(),
+        { algorithm: "RS256" }
+      );
 
       const options = {
         method: args.method,
