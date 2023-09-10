@@ -112,7 +112,7 @@ export async function callGptApi(
   while (true) {
     let doNotRetry = false;
     try {
-      console.log("Asking GPT...");
+      console.log("\nAsking GPT...");
 
       doNotRetry = false;
 

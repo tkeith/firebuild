@@ -234,9 +234,11 @@ async function handleUserRequest(context: Context, request: string) {
       }
       const newMessage = gptRes.newMessage;
       messages.push(newMessage);
-      console.log("GPT:");
-      console.log(newMessage.content);
-      console.log();
+      if (newMessage.content) {
+        console.log("\nGPT:");
+        console.log(newMessage.content);
+        console.log();
+      }
       continue;
     }
     throw new Error("unreachable");
@@ -253,6 +255,7 @@ async function main() {
   );
 
   while (true) {
+    console.log();
     const request = await askUserMultiLine("What do you want to do?");
     await handleUserRequest({ codePath }, request);
   }
